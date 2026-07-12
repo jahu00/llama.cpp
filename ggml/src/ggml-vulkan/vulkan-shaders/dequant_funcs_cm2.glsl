@@ -156,6 +156,49 @@ f16vec4 dequantFuncQ5_0_v(const in decodeBufQ5_0 bl, const in uint blockCoords[2
     return f16vec4((vec4(ql) + vec4(qh_high) - vec4(16.0)) * vec4(float(d)));
 }
 
+layout(buffer_reference, std430, buffer_reference_align = 2) buffer decodeBufQ6_0 {
+   block_q6_0 block;
+};
+
+float16_t dequantFuncQ6_0(const in decodeBufQ6_0 bl, const in uint blockCoords[2], const in uint coordInBlock[2])
+{
+    const float16_t d = bl.block.d;
+    const uint idx = coordInBlock[1];
+    const uint iqs = idx & 0xF;
+
+    const uint h = uint(bl.block.qh[iqs % 8]) >> (4 * (iqs / 8));
+    const uint hsel = (idx & 0x10) >> 3;   // 0 or 2
+    const uint qh = ((h >> hsel) & 0x03) << 4;
+
+    const uint shift = (idx & 0x10) >> 2;  // 0 or 4
+    uint32_t qs = bl.block.qs[iqs];
+    qs >>= shift;
+    qs &= 0xF;
+
+    float16_t ret = (float16_t(qs | qh) - float16_t(32)) * d;
+    return ret;
+}
+
+f16vec4 dequantFuncQ6_0_v(const in decodeBufQ6_0 bl, const in uint blockCoords[2], const in uint coordInBlock[2])
+{
+    const float16_t d = bl.block.d;
+    const uint idx = coordInBlock[1];
+    const uint shift = (idx & 0x10) >> 2;   // 0 or 4
+    const uint hsel  = (idx & 0x10) >> 3;   // 0 or 2
+    const uint iqs0  = idx & 0xF;           // aligned to 4 -> 0,4,8,12
+
+    f16vec4 ret;
+    [[unroll]] for (uint k = 0; k < 4; ++k) {
+        const uint iqs = iqs0 + k;
+        const uint h = uint(bl.block.qh[iqs % 8]) >> (4 * (iqs / 8));
+        const uint qh = ((h >> hsel) & 0x03) << 4;
+        uint qs = uint(bl.block.qs[iqs]);
+        qs = (qs >> shift) & 0xF;
+        ret[k] = (float16_t(qs | qh) - float16_t(32)) * d;
+    }
+    return ret;
+}
+
 layout(buffer_reference, std430, buffer_reference_align = 8) buffer decodeBufQ5_1 {
    block_q5_1 block;
 };
@@ -1313,6 +1356,9 @@ f16vec4 dequantFuncNVFP4_v(const in decodeBufNVFP4 bl, const in uint blockCoords
 #elif defined(DATA_A_Q5_0)
 #define dequantFuncA dequantFuncQ5_0
 #define dequantFuncA_v dequantFuncQ5_0_v
+#elif defined(DATA_A_Q6_0)
+#define dequantFuncA dequantFuncQ6_0
+#define dequantFuncA_v dequantFuncQ6_0_v
 #elif defined(DATA_A_Q5_1)
 #define dequantFuncA dequantFuncQ5_1
 #define dequantFuncA_v dequantFuncQ5_1_v
