@@ -1,3 +1,9 @@
+NOTE: This is a version of llama.cpp with Q6 KV cache quant taken from [beellama.cpp](https://github.com/Anbeeld/beellama.cpp). The transplant was done by Claude Opus 4.8. For some reason beellama didn't work for me on my R9700 with Vulkan backend, but llama.cpp works fine. In an attempt to find a better combination of model/cache quant and optimization for fitting Qwen 3.6 27B on 32GB VRAM, I really wanted to give Q6 a try. The author of beellama.cpp had some [impressive claims](https://www.reddit.com/r/LocalLLaMA/comments/1tza4ji/qwen_36_27b_kv_cache_quant_benchmarks_75_pairs/) about Q6 quant and I can definitelly get a few extra k context using that. I'm yet to test how good the quality is. That said using AutoRound Q5 with Q8 KV gives me ~140k context, which is not bad (Q6 KV boosts that to ~180k with this model).
+
+TLDR: This version has Q6 KV cache quant and works with Vulkan.
+
+----
+
 # llama.cpp
 
 ![llama](https://raw.githubusercontent.com/ggml-org/llama.brand/refs/heads/master/cover/llama-cpp/cover-llama-cpp-dark.svg)
