@@ -25,6 +25,8 @@ layout (binding = 1) readonly buffer K_PACKED_Q5_0 { block_q5_0_packed16 data[];
 layout (binding = 2) readonly buffer V_PACKED_Q5_0 { block_q5_0_packed16 data[]; } v_packed_q5_0;
 layout (binding = 1) readonly buffer K_PACKED_Q5_1 { block_q5_1_packed16 data[]; } k_packed_q5_1;
 layout (binding = 2) readonly buffer V_PACKED_Q5_1 { block_q5_1_packed16 data[]; } v_packed_q5_1;
+layout (binding = 1) readonly buffer K_PACKED_Q6_0 { block_q6_0_packed16 data[]; } k_packed_q6_0;
+layout (binding = 2) readonly buffer V_PACKED_Q6_0 { block_q6_0_packed16 data[]; } v_packed_q6_0;
 layout (binding = 1) readonly buffer K_PACKED_Q8_0 { block_q8_0_packed16 data[]; } k_packed_q8_0;
 layout (binding = 2) readonly buffer V_PACKED_Q8_0 { block_q8_0_packed16 data[]; } v_packed_q8_0;
 
@@ -96,6 +98,31 @@ layout (binding = 1) readonly buffer K_PACKED_Q5_1_P32 { block_q5_1_packed32 dat
          + FLOAT_TYPE(BUF.data[a_offset + ib].m);                                                 \
 }
 
+// q6_0 has 2 high bits per value stored in qh[8] (packed16: qh[4]). Unlike q5_0
+// (1 bit/value in a 32-bit word), each of the 4 consecutive elements needs its
+// own 2-bit field from the qh[] array. The low half (iqs<16) uses high-bit pair
+// [1:0] of the qh nibble; the high half (iqs>=16) uses [3:2] (hsel selects it).
+#define FA_DEQUANT4_Q6_0(BUF) {                                                                   \
+    uint b0 = iqs & 0xF;                                                                          \
+    uint vui_lo = uint(BUF.data[a_offset + ib].qs[b0 / 2 + 0]);                                   \
+    uint vui_hi = uint(BUF.data[a_offset + ib].qs[b0 / 2 + 1]);                                   \
+    uint shift = (iqs & 0x10) >> 2;                                                               \
+    vui_lo >>= shift;                                                                             \
+    vui_hi >>= shift;                                                                             \
+    uint hsel = (iqs & 0x10) >> 3;                                                                \
+    FLOAT_TYPEV4 hb;                                                                              \
+    [[unroll]] for (uint k = 0; k < 4; ++k) {                                                     \
+        uint b = b0 + k;                                                                          \
+        uint qword = uint(BUF.data[a_offset + ib].qh[(b % 8) / 2]);                               \
+        uint qbyte = ((b % 8) & 1) != 0 ? (qword >> 8) : (qword & 0xFF);                          \
+        uint hnib  = (qbyte >> (4 * (b / 8))) & 0xF;                                              \
+        hb[k] = FLOAT_TYPE(((hnib >> hsel) & 0x03) << 4);                                         \
+    }                                                                                             \
+    FLOAT_TYPEV4 nibbles = FLOAT_TYPEV4(vui_lo & 0xF, (vui_lo >> 8) & 0xF,                        \
+                                        vui_hi & 0xF, (vui_hi >> 8) & 0xF);                        \
+    return FLOAT_TYPE(BUF.data[a_offset + ib].d) * (nibbles + hb - FLOAT_TYPE(32.0f));            \
+}
+
 #define FA_DEQUANT4_Q8_0(BUF) {                                                                   \
     const i8vec2 v0 = unpack8(int32_t(BUF.data[a_offset + ib].qs[iqs / 2    ])).xy;               \
     const i8vec2 v1 = unpack8(int32_t(BUF.data[a_offset + ib].qs[iqs / 2 + 1])).xy;               \
@@ -113,6 +140,7 @@ FLOAT_TYPEV4 dequantize4(uint ib, uint iqs, uint a_offset, uint binding_idx) {
             case FA_TYPE_Q4_1: FA_DEQUANT4_Q4_1(k_packed_q4_1)
             case FA_TYPE_Q5_0: FA_DEQUANT4_Q5_0(k_packed_q5_0)
             case FA_TYPE_Q5_1: FA_DEQUANT4_Q5_1(k_packed_q5_1)
+            case FA_TYPE_Q6_0: FA_DEQUANT4_Q6_0(k_packed_q6_0)
             case FA_TYPE_Q8_0: FA_DEQUANT4_Q8_0(k_packed_q8_0)
             case FA_TYPE_BF16: FA_DEQUANT4_BF16(k_packed_bf16)
         }
@@ -123,6 +151,7 @@ FLOAT_TYPEV4 dequantize4(uint ib, uint iqs, uint a_offset, uint binding_idx) {
             case FA_TYPE_Q4_1: FA_DEQUANT4_Q4_1(v_packed_q4_1)
             case FA_TYPE_Q5_0: FA_DEQUANT4_Q5_0(v_packed_q5_0)
             case FA_TYPE_Q5_1: FA_DEQUANT4_Q5_1(v_packed_q5_1)
+            case FA_TYPE_Q6_0: FA_DEQUANT4_Q6_0(v_packed_q6_0)
             case FA_TYPE_Q8_0: FA_DEQUANT4_Q8_0(v_packed_q8_0)
             case FA_TYPE_BF16: FA_DEQUANT4_BF16(v_packed_bf16)
         }
